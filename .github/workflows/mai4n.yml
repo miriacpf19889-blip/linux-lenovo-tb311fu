@@ -1,4 +1,4 @@
-name: Build
+name: Build Android Common Kernel
 
 on:
   workflow_dispatch:
@@ -13,51 +13,60 @@ jobs:
     timeout-minutes: 180
 
     env:
-      ROOT: ${{ github.workspace }}
-      JOBS: 4
-      KERNEL_SRC: ${{ github.workspace }}/kernel
+      KERNEL_REPO: miriacpf19889-blip/tb311fu-kernel
+      KERNEL_REF: android15-6.6.142_r00
+      KERNEL_SRC: ${{ github.workspace }}/kernel-common
       KERNEL_OUT: ${{ github.workspace }}/build/kernel
+      ARCH: arm64
+      LLVM: 1
+      LLVM_IAS: 1
 
     steps:
-      - name: Checkout repository
+      - name: Checkout this repo
         uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Install kernel build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential bc bison flex libssl-dev wget curl git \
-            python3 python3-pip ca-certificates
-          if ! command -v clang >/dev/null 2>&1; then
-            sudo apt-get install -y clang lld llvm
-          fi
+            build-essential bc bison flex libssl-dev \
+            git wget curl ca-certificates python3 python3-pip \
+            clang lld llvm
 
-      - name: Validate kernel source tree
+      - name: Checkout Android Common kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ env.KERNEL_REF }}
+          path: kernel-common
+          # token: ${{ secrets.KERNEL_REPO_TOKEN }}  # uncomment if repo is private
+
+      - name: Verify required kernel files
         shell: bash
         run: |
-          test -d "$KERNEL_SRC"
           test -f "$KERNEL_SRC/Makefile"
-          test -f "$ROOT/kernel/configs/tb311fu_defconfig"
-          test -f "$ROOT/kernel/abi/abi_symbollist.raw"
+          test -f "$GITHUB_WORKSPACE/kernel/configs/tb311fu_defconfig"
+          test -f "$GITHUB_WORKSPACE/kernel/abi/abi_symbollist.raw"
 
       - name: Build kernel
         shell: bash
         run: |
           export PATH="/usr/lib/llvm-18/bin:/usr/lib/llvm-17/bin:${PATH}"
-          export ARCH=arm64 LLVM=1 LLVM_IAS=1
-          export KCONFIG_OVERWRITECONFIG=1 KBUILD_BUILD_USER=builder KBUILD_BUILD_HOST=localhost
+          export KCONFIG_OVERWRITECONFIG=1
+          export KBUILD_BUILD_USER=builder
+          export KBUILD_BUILD_HOST=localhost
           export KCFLAGS="${KCFLAGS:-} -D__ANDROID_COMMON_KERNEL__"
 
           mkdir -p "$KERNEL_OUT"
 
           if [[ ! -f "$KERNEL_OUT/.config" ]]; then
-            cp "$ROOT/kernel/configs/tb311fu_defconfig" "$KERNEL_OUT/.config"
+            cp "$GITHUB_WORKSPACE/kernel/configs/tb311fu_defconfig" "$KERNEL_OUT/.config"
           fi
 
-          cp "$ROOT/kernel/abi/abi_symbollist.raw" "$KERNEL_OUT/abi_symbollist.raw"
+          cp "$GITHUB_WORKSPACE/kernel/abi/abi_symbollist.raw" "$KERNEL_OUT/abi_symbollist.raw"
 
           make -C "$KERNEL_SRC" O="$KERNEL_OUT" olddefconfig
-          make -C "$KERNEL_SRC" O="$KERNEL_OUT" -j"${JOBS:-$(nproc)}" Image modules
+          make -C "$KERNEL_SRC" O="$KERNEL_OUT" -j"$(nproc)" Image modules
 
       - name: Upload kernel artifacts
         if: success()
