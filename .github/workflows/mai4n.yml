@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 180
 
     env:
-      KERNEL_REPO: miriacpf19889-blip/tb311fu-kernel
+      KERNEL_REPO: your-org-or-user/tb311fu-kernel
       KERNEL_REF: android15-6.6.142_r00
       KERNEL_SRC: ${{ github.workspace }}/kernel-common
       KERNEL_OUT: ${{ github.workspace }}/build/kernel
@@ -25,7 +25,7 @@ jobs:
       - name: Checkout this repo
         uses: actions/checkout@v4
 
-      - name: Install kernel build deps
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -39,9 +39,9 @@ jobs:
           repository: ${{ env.KERNEL_REPO }}
           ref: ${{ env.KERNEL_REF }}
           path: kernel-common
-          # token: ${{ secrets.KERNEL_REPO_TOKEN }}  # uncomment if repo is private
+          token: ${{ secrets.KERNEL_REPO_TOKEN }} # only if private
 
-      - name: Verify required kernel files
+      - name: Verify required files
         shell: bash
         run: |
           test -f "$KERNEL_SRC/Makefile"
@@ -68,7 +68,7 @@ jobs:
           make -C "$KERNEL_SRC" O="$KERNEL_OUT" olddefconfig
           make -C "$KERNEL_SRC" O="$KERNEL_OUT" -j"$(nproc)" Image modules
 
-      - name: Upload kernel artifacts
+      - name: Upload artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
