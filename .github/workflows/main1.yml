@@ -59,7 +59,7 @@ jobs:
       - name: Install Linux kernel build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y \
             build-essential \
             bc \
             bison \
@@ -69,7 +69,6 @@ jobs:
             python3 \
             clang \
             lld \
-            llvm \
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu
 
@@ -83,17 +82,15 @@ jobs:
         env:
           KERNEL_SRC: ${{ runner.temp }}/kernel-common
           KERNEL_OUT: ${{ runner.temp }}/kernel-out
+          CLANG_BIN: /usr/lib/llvm/$(ls /usr/lib/llvm | sort | tail -n 1)/bin
           JOBS: ${{ github.event.inputs.jobs || github.run_number }}
         run: |
           set -euxo pipefail
 
-          LLVM_VERSION="$(ls -1 /usr/lib/llvm | sort | tail -n 1)"
-          export PATH="/usr/lib/llvm/${LLVM_VERSION}/bin:$PATH"
+          export PATH="$CLANG_BIN:$PATH"
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
-          export CC=clang
-          export LD=ld.lld
           export KBUILD_BUILD_USER=builder
           export KBUILD_BUILD_HOST=github-actions
           export KCFLAGS="${KCFLAGS:-} -D__ANDROID_COMMON_KERNEL__"
