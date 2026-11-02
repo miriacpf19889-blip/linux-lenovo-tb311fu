@@ -1,0 +1,68 @@
+name: Builder
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate-build-scripts:
+    name: Validate build scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install required toolchain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            bison \
+            flex \
+            bc \
+            git \
+            curl \
+            ca-certificates \
+            libssl-dev \
+            python3 \
+            python3-pip
+
+      - name: Verify repository layout
+        run: |
+          test -d adaptation
+          test -d kernel
+          test -d scripts
+          test -f scripts/build-kernel
+          test -f scripts/build-modules
+          test -f scripts/build-userspace
+          test -f docs/build.md
+
+      - name: Validate shell script syntax
+        run: |
+          bash -n scripts/build-kernel
+          bash -n scripts/build-modules
+          bash -n scripts/build-userspace
+
+      - name: Validate Python script syntax
+        run: |
+          python3 -m py_compile \
+            scripts/build-adb-root.py \
+            scripts/build-wifi-charging-driver.py \
+            scripts/check-vendor-abi.py \
+            scripts/stage-rootfs.py
+
+      - name: Confirm build documentation exists
+        run: |
+          grep -E "Kernel:|Toolchain:|build-kernel|build-modules|build-userspace" docs/build.md
