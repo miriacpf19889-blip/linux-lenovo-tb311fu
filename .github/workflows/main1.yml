@@ -1,0 +1,115 @@
+name: Build rootfs and kernel common
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: "Android common kernel branch/tag/commit"
+        required: false
+        default: "android15-6.6.142_r00"
+      rootfs_user:
+        description: "Rootfs user account"
+        required: false
+        default: "alarm"
+      rootfs_uid:
+        description: "Rootfs user UID"
+        required: false
+        default: "1000"
+
+jobs:
+  rootfs:
+    name: Build rootfs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate staged rootfs
+        run: |
+          python3 scripts/stage-rootfs.py \
+            --user "${{ github.event.inputs.rootfs_user || 'alarm' }}" \
+            --uid "${{ github.event.inputs.rootfs_uid || '1000' }}" \
+            --gid 1000 \
+            --output build/rootfs
+
+      - name: Upload rootfs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs
+          path: build/rootfs
+          if-no-files-found: error
+
+  kernel-common:
+    name: Build Android common kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            bc \
+            bison \
+            flex \
+            git \
+            libssl-dev \
+            python3 \
+            clang \
+            lld \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu
+
+      - name: Clone Android common kernel
+        run: |
+          git clone --depth 1 --branch "${{ github.event.inputs.kernel_ref || 'android15-6.6.142_r00' }}" \
+            https://android.googlesource.com/kernel/common \
+            "$RUNNER_TEMP/kernel-common"
+
+      - name: Build kernel and modules
+        env:
+          KERNEL_SRC: ${{ runner.temp }}/kernel-common
+          KERNEL_OUT: ${{ runner.temp }}/kernel-out
+          CLANG_BIN: /usr/lib/llvm/$(ls /usr/lib/llvm | sort | tail -n 1)/bin
+          JOBS: ${{ github.event.inputs.jobs || github.run_number }}
+        run: |
+          set -euxo pipefail
+
+          export PATH="$CLANG_BIN:$PATH"
+          export ARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+          export KBUILD_BUILD_USER=builder
+          export KBUILD_BUILD_HOST=github-actions
+          export KCFLAGS="${KCFLAGS:-} -D__ANDROID_COMMON_KERNEL__"
+
+          mkdir -p "$KERNEL_OUT"
+          if [[ ! -f "$KERNEL_OUT/.config" ]]; then
+            cp "$GITHUB_WORKSPACE/kernel/configs/tb311fu_defconfig" "$KERNEL_OUT/.config"
+          fi
+
+          if [[ -f "$GITHUB_WORKSPACE/kernel/abi/abi_symbollist.raw" ]]; then
+            cp "$GITHUB_WORKSPACE/kernel/abi/abi_symbollist.raw" "$KERNEL_OUT/abi_symbollist.raw"
+          fi
+
+          make -C "$KERNEL_SRC" O="$KERNEL_OUT" olddefconfig
+          make -C "$KERNEL_SRC" O="$KERNEL_OUT" -j"$(nproc)" Image modules
+
+      - name: Upload kernel build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-common
+          path: ${{ runner.temp }}/kernel-out
+          if-no-files-found: error
